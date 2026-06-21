@@ -1,0 +1,207 @@
+---
+title: 'LED Letter Display'
+description: 'Create a reusable 5x7 LED letter component with automatic schematic and PCB layout'
+icon: 'code'
+---
+
+## Overview
+
+This tutorial creates a reusable `<LedLetter />` component that draws any
+capital letter from A to Z with a 5x7 LED matrix. The component stores a small
+bitmap font, turns the selected letter into lit pixels, and uses row/column
+math to place every LED, resistor, schematic symbol, and PCB footprint.
+
+Each LED has its own current-limiting resistor, so the snippet is easy to
+inspect and extend one pixel at a time.
+
+## Create the Snippet
+
+Open [snippets.tscircuit.com](https://snippets.tscircuit.com), create a new
+snippet, and paste this code:
+
+```tsx title="LedLetter.tsx"
+type LedLetterProps = {
+  letter: string
+  power?: string
+  gnd?: string
+  name?: string
+  ledColor?: "red" | "green" | "blue" | "yellow" | "white"
+  ledFootprint?: "0402" | "0603"
+  resistorValue?: string
+  pixelPitch?: number
+}
+
+const FONT_5X7: Record<string, string[]> = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01111", "10000", "10000", "10111", "10001", "10001", "01111"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "10010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+}
+
+const getLitPixels = (letter: string) => {
+  const normalizedLetter = letter.toUpperCase()
+  const rows = FONT_5X7[normalizedLetter] ?? FONT_5X7.A
+
+  return rows.flatMap((rowPattern, row) =>
+    [...rowPattern]
+      .map((value, column) => ({ row, column, isLit: value === "1" }))
+      .filter((pixel) => pixel.isLit),
+  )
+}
+
+export const LedLetter = ({
+  letter,
+  power = "net.VBUS",
+  gnd = "net.GND",
+  name = "LETTER",
+  ledColor = "red",
+  ledFootprint = "0603",
+  resistorValue = "1k",
+  pixelPitch = 2.54,
+}: LedLetterProps) => {
+  const displayLetter = FONT_5X7[letter.toUpperCase()] ? letter.toUpperCase() : "A"
+  const pixels = getLitPixels(displayLetter)
+  const columnCount = 5
+  const rowCount = 7
+  const centerColumn = (columnCount - 1) / 2
+  const centerRow = (rowCount - 1) / 2
+
+  return (
+    <group name={name}>
+      {pixels.map(({ row, column }, index) => {
+        const pixelName = `${name}_${displayLetter}_${index + 1}`
+        const x = (column - centerColumn) * pixelPitch
+        const y = (centerRow - row) * pixelPitch
+        const schX = column * 3
+        const schY = -row * 2
+        const resistorName = `${pixelName}_R`
+        const ledName = `${pixelName}_LED`
+
+        return (
+          <group name={pixelName} key={pixelName}>
+            <resistor
+              name={resistorName}
+              resistance={resistorValue}
+              footprint="0402"
+              pcbX={x - 0.8}
+              pcbY={y}
+              schX={schX - 1.2}
+              schY={schY}
+            />
+            <led
+              name={ledName}
+              color={ledColor}
+              footprint={ledFootprint}
+              pcbX={x + 0.8}
+              pcbY={y}
+              schX={schX + 1.2}
+              schY={schY}
+            />
+            <trace from={power} to={`.${resistorName} > .pin1`} />
+            <trace from={`.${resistorName} > .pin2`} to={`.${ledName} > .pos`} />
+            <trace from={`.${ledName} > .neg`} to={gnd} />
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+export default () => (
+  <board width="22mm" height="30mm">
+    <LedLetter letter="A" power="net.VBUS" gnd="net.GND" />
+  </board>
+)
+```
+
+## Use Another Letter
+
+The component accepts any capital letter from A to Z. Change the `letter` prop
+to draw a different shape:
+
+```tsx
+export default () => (
+  <board width="22mm" height="30mm">
+    <LedLetter letter="R" power="net.VBUS" gnd="net.GND" ledColor="green" />
+  </board>
+)
+```
+
+The `letter` prop is normalized with `toUpperCase()`, so `"r"` and `"R"` select
+the same pattern. Unknown characters fall back to `"A"` so the snippet still
+renders while you are experimenting.
+
+## How the Layout Works
+
+The `FONT_5X7` object stores each letter as seven strings with five characters
+per row. A `1` means the pixel is lit, and a `0` leaves that position empty.
+
+`getLitPixels()` converts the selected letter into `{ row, column }` positions.
+The component then computes coordinates from those positions:
+
+```tsx
+const x = (column - centerColumn) * pixelPitch
+const y = (centerRow - row) * pixelPitch
+const schX = column * 3
+const schY = -row * 2
+```
+
+The PCB coordinates center the 5x7 grid around the board origin. The schematic
+coordinates keep the same row/column relationship but spread the symbols out so
+the LED-resistor strings are easy to inspect.
+
+## Change the Spacing and Parts
+
+Use `pixelPitch` to make the display tighter or wider. The default `2.54`
+matches a familiar 0.1 inch grid, while smaller values create a compact SMD
+layout.
+
+```tsx
+export default () => (
+  <board width="18mm" height="24mm">
+    <LedLetter
+      letter="Z"
+      pixelPitch={2}
+      ledFootprint="0402"
+      resistorValue="2.2k"
+      power="net.VBUS"
+      gnd="net.GND"
+    />
+  </board>
+)
+```
+
+The snippet uses a 0402 resistor for every lit LED and either 0402 or 0603 LEDs.
+Keeping one resistor per pixel makes the electrical intent clear and avoids
+sharing a resistor across multiple LEDs with different forward-voltage paths.
+
+## Next Steps
+
+Try extending the component by adding:
+
+- multiple `<LedLetter />` instances side by side to spell a word;
+- a `rotation` or `mirror` prop for panel mounting;
+- named nets for row or column scanning if you want to drive the matrix from a
+  microcontroller.
